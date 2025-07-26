@@ -29,6 +29,7 @@ Languages:
 ## Table of Contents
 - [🎤 AcmeLabs SpeakEasy](#-acmelabs-speakeasy)
   - [Table of Contents](#table-of-contents)
+  - [✅ Requirements](#-requirements)
   - [🌐 Setup AWS Credentials](#-setup-aws-credentials)
   - [👤 Create IAM User](#-create-iam-user)
   - [🔑 Create Access Keys](#-create-access-keys)
@@ -42,6 +43,14 @@ Languages:
   - [🚧 Update Resources](#-update-resources)
   - [🔄 Trigger Audio Processing](#-trigger-audio-processing)
   - [🏁 Conclusion](#-conclusion)
+
+## ✅ Requirements
+Throughout this document, to stand up this application you will need to do the following:
+
+1. **Replace** <AWSAccountId> with your AWS Account ID **#**
+2. **Replace** <Project> with a short project name (e.g. `acmelabs`) please don't use acmelabs.
+3. Do **NOT** modify the folder structure of the repository.
+4. Do **NOT** change the names of the files in the repository.
 
 ## 🌐 Setup AWS Credentials
 To set up AWS credentials follow these steps:
@@ -400,41 +409,6 @@ To modify the configuration files, follow these steps:
     Default: <Project>-speakeasy-synthesis-status
     Description: The name of the Synthesize Status Lambda function
 
-  TriggerLambdaS3Key:
-    Type: String
-    Default: speakeasy/trigger.zip
-    Description: The prefix for the Upload Trigger Lambda function code files in the S3 bucket
-
-  TranscribeLambdaS3Key:
-    Type: String
-    Default: speakeasy/transcribe.zip
-    Description: The prefix for the Lambda function code files in the S3 bucket
-
-  TranscriptionStatusLambdaS3Key:
-    Type: String
-    Default: speakeasy/status_transcription.zip
-    Description: The prefix for the Lambda function code files in the S3 bucket
-
-  TranslateLambdaS3Key:
-    Type: String
-    Default: speakeasy/translate.zip
-    Description: The prefix for the Lambda function code files in the S3 bucket
-
-  TranslationStatusLambdaS3Key:
-    Type: String
-    Default: speakeasy/status_translation.zip
-    Description: The prefix for the Lambda function code files in the S3 bucket
-
-  SynthesizeLambdaS3Key:
-    Type: String
-    Default: speakeasy/synthesize.zip
-    Description: The prefix for the Lambda function code files in the S3 bucket
-
-  SynthesisStatusLambdaS3Key:
-    Type: String
-    Default: speakeasy/status_synthesis.zip
-    Description: The prefix for the Lambda function code files in the S3 bucket
-
   AudioProcessingStateMachineName:
     Type: String
     Default: <Project>-speakeasy-audio-processing-state-machine
@@ -450,65 +424,10 @@ To modify the configuration files, follow these steps:
     Default: <Project>-speakeasy-lambda-execution-iam-role
     Description: The name of the Lambda Execution IAM role
 
-  TriggerLambdaHandler:
-    Type: String
-    Default: trigger.lambda_handler
-    Description: The handler for the Upload Trigger Lambda function
-
-  TranscribeLambdaHandler:
-    Type: String
-    Default: transcribe.lambda_handler
-    Description: The handler for the Transcribe Lambda function
-
-  TranscriptionStatusLambdaHandler:
-    Type: String
-    Default: status_transcription.lambda_handler
-    Description: The handler for the Transcription Status Lambda function
-
-  TranslateLambdaHandler:
-    Type: String
-    Default: translate.lambda_handler
-    Description: The handler for the Translate Lambda function
-
-  TranslationStatusLambdaHandler:
-    Type: String
-    Default: status_translation.lambda_handler
-    Description: The handler for the Translate Status Lambda function
-
-  SynthesizeLambdaHandler:
-    Type: String
-    Default: synthesize.lambda_handler
-    Description: The handler for the Synthesize Lambda function
-
-  SynthesisStatusLambdaHandler:
-    Type: String
-    Default: status_synthesis.lambda_handler
-    Description: The handler for the Synthesize Status Lambda function
-
-  OwnerNameTag:
-    Type: String
-    Default: "Cloud DevOps Engineering"
-    Description: The department responsible for the resource.
-
   ApplicationNameTag:
     Type: String
     Default: "<Project> SpeakEasy"
     Description: The name of the application.
-
-  VersionTag:
-    Type: String
-    Default: "1.0"
-    Description: The version of the application.
-
-  LifecycleStatusTag:
-    Type: String
-    Default: Active
-    Description: The lifecycle status of the resource (e.g., Active, Deprecated, Archived).
-
-  AutomationDetailsTag:
-    Type: String
-    Default: "Created by AWS CloudFormation"
-    Description: Details about the automation process that created the resource.
 
   CreatedOnTag:
     Type: String
