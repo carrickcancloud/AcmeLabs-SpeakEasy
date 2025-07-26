@@ -1,0 +1,845 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: AcmeLabs SpeakEasy
+
+Parameters:
+  # Parameters for configuring the deployment
+  Environment:
+    Type: String
+    AllowedValues:
+      - beta
+      - prod
+    Description: Environment for deployment (beta or prod)
+
+  LambdaCodeS3BucketName:
+    Type: String
+    Default: acmelabs-lambdas
+    Description: The S3 bucket where Lambda function code is stored
+
+  AudioS3BucketName:
+    Type: String
+    Default: acmelabs-speakeasy-2025
+    Description: The name of the audio S3 bucket
+
+  TriggerLambdaName:
+    Type: String
+    Default: acmelabs-speakeasy-trigger
+    Description: The name of the Upload Trigger Lambda function
+
+  TranscribeLambdaName:
+    Type: String
+    Default: acmelabs-speakeasy-transcribe
+    Description: The name of the Transcribe Lambda function
+
+  TranscriptionStatusLambdaName:
+    Type: String
+    Default: acmelabs-speakeasy-transcription-status
+    Description: The name of the Transcribe Status Lambda function
+
+  TranslateLambdaName:
+    Type: String
+    Default: acmelabs-speakeasy-translate
+    Description: The name of the Translate Lambda function
+
+  TranslationStatusLambdaName:
+    Type: String
+    Default: acmelabs-speakeasy-translation-status
+    Description: The name of the Translate Status Lambda function
+
+  SynthesizeLambdaName:
+    Type: String
+    Default: acmelabs-speakeasy-synthesize
+    Description: The name of the Synthesize Lambda function
+
+  SynthesisStatusLambdaName:
+    Type: String
+    Default: acmelabs-speakeasy-synthesis-status
+    Description: The name of the Synthesize Status Lambda function
+
+  TriggerLambdaS3Key:
+    Type: String
+    Default: speakeasy/trigger.zip
+    Description: The prefix for the Upload Trigger Lambda function code files in the S3 bucket
+
+  TranscribeLambdaS3Key:
+    Type: String
+    Default: speakeasy/transcribe.zip
+    Description: The prefix for the Lambda function code files in the S3 bucket
+
+  TranscriptionStatusLambdaS3Key:
+    Type: String
+    Default: speakeasy/status_transcription.zip
+    Description: The prefix for the Lambda function code files in the S3 bucket
+
+  TranslateLambdaS3Key:
+    Type: String
+    Default: speakeasy/translate.zip
+    Description: The prefix for the Lambda function code files in the S3 bucket
+
+  TranslationStatusLambdaS3Key:
+    Type: String
+    Default: speakeasy/status_translation.zip
+    Description: The prefix for the Lambda function code files in the S3 bucket
+
+  SynthesizeLambdaS3Key:
+    Type: String
+    Default: speakeasy/synthesize.zip
+    Description: The prefix for the Lambda function code files in the S3 bucket
+
+  SynthesisStatusLambdaS3Key:
+    Type: String
+    Default: speakeasy/status_synthesis.zip
+    Description: The prefix for the Lambda function code files in the S3 bucket
+
+  AudioProcessingStateMachineName:
+    Type: String
+    Default: acmelabs-speakeasy-audio-processing-state-machine
+    Description: The name of the Audio Processing Step Functions state machine
+
+  StepFunctionsIAMRoleName:
+    Type: String
+    Default: acmelabs-speakeasy-step-functions-iam-role
+    Description: The name of the Step Functions IAM role
+
+  LambdaExecutionIAMRoleName:
+    Type: String
+    Default: acmelabs-speakeasy-lambda-execution-iam-role
+    Description: The name of the Lambda Execution IAM role
+
+  TriggerLambdaHandler:
+    Type: String
+    Default: trigger.lambda_handler
+    Description: The handler for the Upload Trigger Lambda function
+
+  TranscribeLambdaHandler:
+    Type: String
+    Default: transcribe.lambda_handler
+    Description: The handler for the Transcribe Lambda function
+
+  TranscriptionStatusLambdaHandler:
+    Type: String
+    Default: status_transcription.lambda_handler
+    Description: The handler for the Transcription Status Lambda function
+
+  TranslateLambdaHandler:
+    Type: String
+    Default: translate.lambda_handler
+    Description: The handler for the Translate Lambda function
+
+  TranslationStatusLambdaHandler:
+    Type: String
+    Default: status_translation.lambda_handler
+    Description: The handler for the Translate Status Lambda function
+
+  SynthesizeLambdaHandler:
+    Type: String
+    Default: synthesize.lambda_handler
+    Description: The handler for the Synthesize Lambda function
+
+  SynthesisStatusLambdaHandler:
+    Type: String
+    Default: status_synthesis.lambda_handler
+    Description: The handler for the Synthesize Status Lambda function
+
+  OwnerNameTag:
+    Type: String
+    Default: "Cloud DevOps Engineering"
+    Description: The department responsible for the resource.
+
+  ApplicationNameTag:
+    Type: String
+    Default: "AcmeLabs SpeakEasy"
+    Description: The name of the application.
+
+  VersionTag:
+    Type: String
+    Default: "1.0"
+    Description: The version of the application.
+
+  LifecycleStatusTag:
+    Type: String
+    Default: Active
+    Description: The lifecycle status of the resource (e.g., Active, Deprecated, Archived).
+
+  AutomationDetailsTag:
+    Type: String
+    Default: "Created by AWS CloudFormation"
+    Description: Details about the automation process that created the resource.
+
+  CreatedOnTag:
+    Type: String
+    Default: "2025-07-23"
+    Description: The date when the resource was created, in YYYY-MM-DD format.
+
+Resources:
+  # IAM role for Step Functions
+  StepFunctionsIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${StepFunctionsIAMRoleName}-${Environment}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: StepFunctionsPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource:
+                  - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${TranscribeLambdaName}-${Environment}"
+                  - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${TranscriptionStatusLambdaName}-${Environment}"
+                  - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${TranslateLambdaName}-${Environment}"
+                  - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${TranslationStatusLambdaName}-${Environment}"
+                  - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${SynthesizeLambdaName}-${Environment}"
+                  - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${SynthesisStatusLambdaName}-${Environment}"
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/vendedlogs/states/${AudioProcessingStateMachineName}-${Environment}-Logs:*"
+      Tags:
+        - Key: Name
+          Value: !Sub "${StepFunctionsIAMRoleName}-${Environment}"
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Owner
+          Value: !Ref OwnerNameTag
+        - Key: Application
+          Value: !Ref ApplicationNameTag
+        - Key: Version
+          Value: !Ref VersionTag
+        - Key: Lifecycle
+          Value: !Ref LifecycleStatusTag
+        - Key: Automation
+          Value: !Ref AutomationDetailsTag
+        - Key: CreatedOn
+          Value: !Ref CreatedOnTag
+
+  # IAM role for Lambda execution
+  LambdaExecutionIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${LambdaExecutionIAMRoleName}-${Environment}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: AudioProcessingPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${TriggerLambdaName}-${Environment}*"
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${TranscribeLambdaName}-${Environment}*"
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${TranscriptionStatusLambdaName}-${Environment}*"
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${TranslateLambdaName}-${Environment}*"
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${TranslationStatusLambdaName}-${Environment}*"
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${SynthesizeLambdaName}-${Environment}*"
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${SynthesisStatusLambdaName}-${Environment}*"
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub "arn:aws:s3:::${AudioS3BucketName}-${Environment}"
+                  - !Sub "arn:aws:s3:::${AudioS3BucketName}-${Environment}/translations/*"
+                  - !Sub "arn:aws:s3:::${AudioS3BucketName}-${Environment}/transcripts/*"
+                  - !Sub "arn:aws:s3:::${AudioS3BucketName}-${Environment}/audio_inputs/*"
+                  - !Sub "arn:aws:s3:::${AudioS3BucketName}-${Environment}/audio_outputs/*"
+              - Effect: Allow
+                Action:
+                  - states:StartExecution
+                Resource:
+                  - !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${AudioProcessingStateMachineName}-${Environment}"
+              - Effect: Allow
+                Action:
+                  - transcribe:StartTranscriptionJob
+                  - transcribe:GetTranscriptionJob
+                Resource:
+                  - !Sub "arn:aws:transcribe:${AWS::Region}:${AWS::AccountId}:transcription-job/*"
+              - Effect: Allow
+                Action:
+                  - translate:TranslateText
+                Resource:
+                  - "*"
+              - Effect: Allow
+                Action:
+                  - polly:SynthesizeSpeech
+                Resource:
+                  - "*"
+      Tags:
+        - Key: Name
+          Value: !Sub "${LambdaExecutionIAMRoleName}-${Environment}"
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Owner
+          Value: !Ref OwnerNameTag
+        - Key: Application
+          Value: !Ref ApplicationNameTag
+        - Key: Version
+          Value: !Ref VersionTag
+        - Key: Lifecycle
+          Value: !Ref LifecycleStatusTag
+        - Key: Automation
+          Value: !Ref AutomationDetailsTag
+        - Key: CreatedOn
+          Value: !Ref CreatedOnTag
+
+  # S3 bucket for audio files
+  AudioBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${AudioS3BucketName}-${Environment}"
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireOldOutputs
+            Status: Enabled
+            ExpirationInDays: 30
+      Tags:
+        - Key: Name
+          Value: !Sub "${AudioS3BucketName}-${Environment}"
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Owner
+          Value: !Ref OwnerNameTag
+        - Key: Application
+          Value: !Ref ApplicationNameTag
+        - Key: Version
+          Value: !Ref VersionTag
+        - Key: Lifecycle
+          Value: !Ref LifecycleStatusTag
+        - Key: Automation
+          Value: !Ref AutomationDetailsTag
+        - Key: CreatedOn
+          Value: !Ref CreatedOnTag
+
+  # Lambda function for transcription
+  TranscribeLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${TranscribeLambdaName}-${Environment}"
+      Handler: !Ref TranscribeLambdaHandler
+      Role: !GetAtt LambdaExecutionIAMRole.Arn
+      Code:
+        S3Bucket: !Ref LambdaCodeS3BucketName
+        S3Key: !Ref TranscribeLambdaS3Key
+      Runtime: python3.13
+      Environment:
+        Variables:
+          S3_BUCKET: !Sub "${AudioS3BucketName}-${Environment}"
+      Timeout: 120
+      Tags:
+        - Key: Name
+          Value: !Sub "${TranscribeLambdaName}-${Environment}"
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Owner
+          Value: !Ref OwnerNameTag
+        - Key: Application
+          Value: !Ref ApplicationNameTag
+        - Key: Version
+          Value: !Ref VersionTag
+        - Key: Lifecycle
+          Value: !Ref LifecycleStatusTag
+        - Key: Automation
+          Value: !Ref AutomationDetailsTag
+        - Key: CreatedOn
+          Value: !Ref CreatedOnTag
+
+  # Lambda function for transcription status
+  TranscriptionStatusLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${TranscriptionStatusLambdaName}-${Environment}"
+      Handler: !Ref TranscriptionStatusLambdaHandler
+      Role: !GetAtt LambdaExecutionIAMRole.Arn
+      Code:
+        S3Bucket: !Ref LambdaCodeS3BucketName
+        S3Key: !Ref TranscriptionStatusLambdaS3Key
+      Runtime: python3.13
+      Environment:
+        Variables:
+          S3_BUCKET: !Sub "${AudioS3BucketName}-${Environment}"
+      Timeout: 120
+      Tags:
+        - Key: Name
+          Value: !Sub "${TranscriptionStatusLambdaName}-${Environment}"
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Owner
+          Value: !Ref OwnerNameTag
+        - Key: Application
+          Value: !Ref ApplicationNameTag
+        - Key: Version
+          Value: !Ref VersionTag
+        - Key: Lifecycle
+          Value: !Ref LifecycleStatusTag
+        - Key: Automation
+          Value: !Ref AutomationDetailsTag
+        - Key: CreatedOn
+          Value: !Ref CreatedOnTag
+
+  # Lambda function for translation
+  TranslateLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${TranslateLambdaName}-${Environment}"
+      Handler: !Ref TranslateLambdaHandler
+      Role: !GetAtt LambdaExecutionIAMRole.Arn
+      Code:
+        S3Bucket: !Ref LambdaCodeS3BucketName
+        S3Key: !Ref TranslateLambdaS3Key
+      Runtime: python3.13
+      Environment:
+        Variables:
+          S3_BUCKET: !Sub "${AudioS3BucketName}-${Environment}"
+          TARGET_LANGUAGE: "en-US"
+      Timeout: 120
+      Tags:
+        - Key: Name
+          Value: !Sub "${TranslateLambdaName}-${Environment}"
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Owner
+          Value: !Ref OwnerNameTag
+        - Key: Application
+          Value: !Ref ApplicationNameTag
+        - Key: Version
+          Value: !Ref VersionTag
+        - Key: Lifecycle
+          Value: !Ref LifecycleStatusTag
+        - Key: Automation
+          Value: !Ref AutomationDetailsTag
+        - Key: CreatedOn
+          Value: !Ref CreatedOnTag
+
+  # Lambda function for translation status
+  TranslationStatusLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${TranslationStatusLambdaName}-${Environment}"
+      Handler: !Ref TranslationStatusLambdaHandler
+      Role: !GetAtt LambdaExecutionIAMRole.Arn
+      Code:
+        S3Bucket: !Ref LambdaCodeS3BucketName
+        S3Key: !Ref TranslationStatusLambdaS3Key
+      Runtime: python3.13
+      Environment:
+        Variables:
+          S3_BUCKET: !Sub "${AudioS3BucketName}-${Environment}"
+      Timeout: 120
+      Tags:
+        - Key: Name
+          Value: !Sub "${TranslationStatusLambdaName}-${Environment}"
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Owner
+          Value: !Ref OwnerNameTag
+        - Key: Application
+          Value: !Ref ApplicationNameTag
+        - Key: Version
+          Value: !Ref VersionTag
+        - Key: Lifecycle
+          Value: !Ref LifecycleStatusTag
+        - Key: Automation
+          Value: !Ref AutomationDetailsTag
+        - Key: CreatedOn
+          Value: !Ref CreatedOnTag
+
+  # Lambda function for synthesis
+  SynthesizeLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${SynthesizeLambdaName}-${Environment}"
+      Handler: !Ref SynthesizeLambdaHandler
+      Role: !GetAtt LambdaExecutionIAMRole.Arn
+      Code:
+        S3Bucket: !Ref LambdaCodeS3BucketName
+        S3Key: !Ref SynthesizeLambdaS3Key
+      Runtime: python3.13
+      Environment:
+        Variables:
+          S3_BUCKET: !Sub "${AudioS3BucketName}-${Environment}"
+      Timeout: 120
+      Tags:
+        - Key: Name
+          Value: !Sub "${SynthesizeLambdaName}-${Environment}"
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Owner
+          Value: !Ref OwnerNameTag
+        - Key: Application
+          Value: !Ref ApplicationNameTag
+        - Key: Version
+          Value: !Ref VersionTag
+        - Key: Lifecycle
+          Value: !Ref LifecycleStatusTag
+        - Key: Automation
+          Value: !Ref AutomationDetailsTag
+        - Key: CreatedOn
+          Value: !Ref CreatedOnTag
+
+  # Lambda function for synthesis status
+  SynthesisStatusLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${SynthesisStatusLambdaName}-${Environment}"
+      Handler: !Ref SynthesisStatusLambdaHandler
+      Role: !GetAtt LambdaExecutionIAMRole.Arn
+      Code:
+        S3Bucket: !Ref LambdaCodeS3BucketName
+        S3Key: !Ref SynthesisStatusLambdaS3Key
+      Runtime: python3.13
+      Environment:
+        Variables:
+          S3_BUCKET: !Sub "${AudioS3BucketName}-${Environment}"
+      Timeout: 120
+      Tags:
+        - Key: Name
+          Value: !Sub "${SynthesisStatusLambdaName}-${Environment}"
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Owner
+          Value: !Ref OwnerNameTag
+        - Key: Application
+          Value: !Ref ApplicationNameTag
+        - Key: Version
+          Value: !Ref VersionTag
+        - Key: Lifecycle
+          Value: !Ref LifecycleStatusTag
+        - Key: Automation
+          Value: !Ref AutomationDetailsTag
+        - Key: CreatedOn
+          Value: !Ref CreatedOnTag
+
+  # Step Functions state machine for audio processing
+  AudioProcessingStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      Definition:
+        Comment: "Audio Processing State Machine"
+        StartAt: "TranscribeAudio"
+        States:
+          TranscribeAudio:
+            Type: Task
+            Resource: !GetAtt TranscribeLambda.Arn
+            ResultPath: "$.transcriptionResult"
+            Next: "WaitForTranscription"
+          WaitForTranscription:
+            Type: Wait
+            Seconds: 5
+            Next: "CheckTranscriptionStatus"
+          CheckTranscriptionStatus:
+            Type: Task
+            Resource: !GetAtt TranscriptionStatusLambda.Arn
+            ResultPath: "$.statusTranscriptionResult"
+            Next: "IsTranscriptionComplete"
+          IsTranscriptionComplete:
+            Type: Choice
+            Choices:
+              - Variable: "$.statusTranscriptionResult.status"
+                StringEquals: "COMPLETED"
+                Next: "TranslateText"
+              - Variable: "$.statusTranscriptionResult.status"
+                StringEquals: "FAILED"
+                Next: "HandleFailure"
+            Default: "WaitForTranscription"
+          TranslateText:
+            Type: Task
+            Resource: !GetAtt TranslateLambda.Arn
+            Parameters:
+              transcript_uri.$: "$.statusTranscriptionResult.transcript_uri"
+              target_languages:
+                - "es"
+                - "fr"
+                - "de"
+              bucket.$: "$.statusTranscriptionResult.bucket"
+              original_filename.$: "$.statusTranscriptionResult.original_filename"
+            Next: "WaitForTranslation"
+          WaitForTranslation:
+            Type: Wait
+            Seconds: 5
+            Next: "CheckTranslationStatus"
+          CheckTranslationStatus:
+            Type: Task
+            Resource: !GetAtt TranslationStatusLambda.Arn
+            ResultPath: "$.statusTranslationResult"
+            Next: "IsTranslationComplete"
+          IsTranslationComplete:
+            Type: Choice
+            Choices:
+              - Variable: "$.statusTranslationResult.status"
+                StringEquals: "COMPLETED"
+                Next: "SynthesizeSpeech"
+              - Variable: "$.statusTranslationResult.status"
+                StringEquals: "IN_PROGRESS"
+                Next: "WaitForTranslation"
+              - Variable: "$.statusTranslationResult.status"
+                StringEquals: "FAILED"
+                Next: "HandleTranslationFailure"
+            Default: "WaitForTranslation"
+          SynthesizeSpeech:
+            Type: Task
+            Resource: !GetAtt SynthesizeLambda.Arn
+            ResultPath: "$.synthesisResult"
+            Next: "WaitForSynthesis"
+          WaitForSynthesis:
+            Type: Wait
+            Seconds: 5
+            Next: "CheckSynthesisStatus"
+          CheckSynthesisStatus:
+            Type: Task
+            Resource: !GetAtt SynthesisStatusLambda.Arn
+            ResultPath: "$.synthesisStatus"
+            Next: "IsSynthesisComplete"
+          IsSynthesisComplete:
+            Type: Choice
+            Choices:
+              - Variable: "$.synthesisStatus.synthesisComplete.audio_statuses.es"
+                StringEquals: "EXISTS"
+                Next: "CheckSpanishStatus"
+              - Variable: "$.synthesisStatus.synthesisComplete.audio_statuses.fr"
+                StringEquals: "EXISTS"
+                Next: "CheckFrenchStatus"
+              - Variable: "$.synthesisStatus.synthesisComplete.audio_statuses.de"
+                StringEquals: "EXISTS"
+                Next: "CheckGermanStatus"
+            Default: "WaitForSynthesis"
+          CheckSpanishStatus:
+            Type: Choice
+            Choices:
+              - Variable: "$.synthesisStatus.synthesisComplete.audio_statuses.es"
+                StringEquals: "IN_PROGRESS"
+                Next: "CheckSpanishRetry"
+              - Variable: "$.synthesisStatus.synthesisComplete.audio_statuses.es"
+                StringEquals: "FAILED"
+                Next: "HandleSynthesisFailure"
+              - Variable: "$.synthesisStatus.synthesisComplete.audio_statuses.es"
+                StringEquals: "EXISTS"
+                Next: "CheckFrenchStatus"
+            Default: "HandleSynthesisFailure"
+          CheckSpanishRetry:
+            Type: Choice
+            Choices:
+              - Variable: "$.retryCountSpanish"
+                NumericLessThan: 5
+                Next: "WaitSpanish"
+              - Variable: "$.retryCountSpanish"
+                NumericGreaterThanEquals: 5
+                Next: "HandleSynthesisFailure"
+          WaitSpanish:
+            Type: Wait
+            Seconds: 5
+            Next: "IncrementSpanishRetry"
+          IncrementSpanishRetry:
+            Type: Pass
+            ResultPath: "$.retryCountSpanish"
+            Next: "CheckSpanishStatus"
+          CheckFrenchStatus:
+            Type: Choice
+            Choices:
+              - Variable: "$.synthesisStatus.synthesisComplete.audio_statuses.fr"
+                StringEquals: "IN_PROGRESS"
+                Next: "CheckFrenchRetry"
+              - Variable: "$.synthesisStatus.synthesisComplete.audio_statuses.fr"
+                StringEquals: "FAILED"
+                Next: "HandleSynthesisFailure"
+              - Variable: "$.synthesisStatus.synthesisComplete.audio_statuses.fr"
+                StringEquals: "EXISTS"
+                Next: "CheckGermanStatus"
+            Default: "HandleSynthesisFailure"
+          CheckFrenchRetry:
+            Type: Choice
+            Choices:
+              - Variable: "$.retryCountFrench"
+                NumericLessThan: 5
+                Next: "WaitFrench"
+              - Variable: "$.retryCountFrench"
+                NumericGreaterThanEquals: 5
+                Next: "HandleSynthesisFailure"
+          WaitFrench:
+            Type: Wait
+            Seconds: 5
+            Next: "IncrementFrenchRetry"
+          IncrementFrenchRetry:
+            Type: Pass
+            ResultPath: "$.retryCountFrench"
+            Next: "CheckFrenchStatus"
+          CheckGermanStatus:
+            Type: Choice
+            Choices:
+              - Variable: "$.synthesisStatus.synthesisComplete.audio_statuses.de"
+                StringEquals: "IN_PROGRESS"
+                Next: "CheckGermanRetry"
+              - Variable: "$.synthesisStatus.synthesisComplete.audio_statuses.de"
+                StringEquals: "FAILED"
+                Next: "HandleSynthesisFailure"
+              - Variable: "$.synthesisStatus.synthesisComplete.audio_statuses.de"
+                StringEquals: "EXISTS"
+                Next: "HandleAllLanguages"
+            Default: "HandleSynthesisFailure"
+          CheckGermanRetry:
+            Type: Choice
+            Choices:
+              - Variable: "$.retryCountGerman"
+                NumericLessThan: 5
+                Next: "WaitGerman"
+              - Variable: "$.retryCountGerman"
+                NumericGreaterThanEquals: 5
+                Next: "HandleSynthesisFailure"
+          WaitGerman:
+            Type: Wait
+            Seconds: 5
+            Next: "IncrementGermanRetry"
+          IncrementGermanRetry:
+            Type: Pass
+            ResultPath: "$.retryCountGerman"
+            Next: "CheckGermanStatus"
+          HandleAllLanguages:
+            Type: Pass
+            ResultPath: "$.handledLanguages"
+            Next: "EndState"
+          EndState:
+            Type: Succeed
+            Comment: "All processing completed successfully."
+          HandleFailure:
+            Type: Fail
+            Error: "TranscriptionFailed"
+            Cause: "The transcription job has failed."
+          HandleTranslationFailure:
+            Type: Fail
+            Error: "TranslationFailed"
+            Cause: "The translation job has failed."
+          HandleSynthesisFailure:
+            Type: Fail
+            Error: "SynthesisFailed"
+            Cause: "The synthesis job has failed."
+      RoleArn: !GetAtt StepFunctionsIAMRole.Arn
+      StateMachineName: !Sub "${AudioProcessingStateMachineName}-${Environment}"
+      Tags:
+        - Key: Name
+          Value: !Sub "${AudioProcessingStateMachineName}-${Environment}"
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Owner
+          Value: !Ref OwnerNameTag
+        - Key: Application
+          Value: !Ref ApplicationNameTag
+        - Key: Version
+          Value: !Ref VersionTag
+        - Key: Lifecycle
+          Value: !Ref LifecycleStatusTag
+        - Key: Automation
+          Value: !Ref AutomationDetailsTag
+        - Key: CreatedOn
+          Value: !Ref CreatedOnTag
+
+  # Lambda function for upload trigger
+  TriggerLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${TriggerLambdaName}-${Environment}"
+      Handler: !Ref TriggerLambdaHandler
+      Role: !GetAtt LambdaExecutionIAMRole.Arn
+      Code:
+        S3Bucket: !Ref LambdaCodeS3BucketName
+        S3Key: !Ref TriggerLambdaS3Key
+      Runtime: python3.13
+      Environment:
+        Variables:
+          STATE_MACHINE_ARN: !GetAtt AudioProcessingStateMachine.Arn
+      Timeout: 120
+      Tags:
+        - Key: Name
+          Value: !Sub "${TriggerLambdaName}-${Environment}"
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Owner
+          Value: !Ref OwnerNameTag
+        - Key: Application
+          Value: !Ref ApplicationNameTag
+        - Key: Version
+          Value: !Ref VersionTag
+        - Key: Lifecycle
+          Value: !Ref LifecycleStatusTag
+        - Key: Automation
+          Value: !Ref AutomationDetailsTag
+        - Key: CreatedOn
+          Value: !Ref CreatedOnTag
+
+  # Permission for S3 to invoke the Lambda function
+  S3InvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref TriggerLambda
+      Principal: s3.amazonaws.com
+      SourceArn: !GetAtt AudioBucket.Arn
+
+Outputs:
+  # Outputs for the resources created
+  AudioS3Bucket:
+    Value: !Ref AudioS3BucketName
+    Description: Name of the audio S3 bucket
+
+  LambdaCodeS3Bucket:
+    Value: !Ref LambdaCodeS3BucketName
+    Description: Name of the S3 bucket where Lambda function code is stored
+
+  TriggerFunctionArn:
+    Value: !GetAtt TriggerLambda.Arn
+    Description: ARN of the Upload Trigger Lambda function
+
+  TranscribeFunctionArn:
+    Value: !GetAtt TranscribeLambda.Arn
+    Description: ARN of the Transcribe Lambda function
+
+  TranscribeStatusFunctionArn:
+    Value: !GetAtt TranscriptionStatusLambda.Arn
+    Description: ARN of the Transcribe Status Lambda function
+
+  TranslateFunctionArn:
+    Value: !GetAtt TranslateLambda.Arn
+    Description: ARN of the Translate Lambda function
+
+  TranslateStatusFunctionArn:
+    Value: !GetAtt TranslationStatusLambda.Arn
+    Description: ARN of the Translate Status Lambda function
+
+  SynthesizeFunctionArn:
+    Value: !GetAtt SynthesizeLambda.Arn
+    Description: ARN of the Synthesize Lambda function
+
+  SynthesizeStatusFunctionArn:
+    Value: !GetAtt SynthesisStatusLambda.Arn
+    Description: ARN of the Synthesize Status Lambda function
+
+  StateMachineArn:
+    Value: !GetAtt AudioProcessingStateMachine.Arn
+    Description: ARN of the audio processing Step Functions state machine
+
+  StepFunctionsIAMRoleArn:
+    Value: !GetAtt StepFunctionsIAMRole.Arn
+    Description: ARN of the Step Functions role
+
+  LambdaExecutionIAMRoleArn:
+    Value: !GetAtt LambdaExecutionIAMRole.Arn
+    Description: ARN of the Lambda execution role

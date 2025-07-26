@@ -1,0 +1,110 @@
+name: Destroy Resources
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Select environment to destroy: beta or prod.'
+        required: true
+        type: choice
+        options:
+          - beta
+          - prod
+
+jobs:
+  undeploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Start Workflow
+        run: |
+          # This step is used to start the workflow and can be used for logging or initial setup
+          echo "Starting deployment workflow for environment: ${{ github.event.inputs.environment }}"  
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set Environment Variables
+        run: |
+          # This step sets the environment variables required for the workflow
+          
+          # Exit immediately if a command exits with a non-zero status
+          set -e
+          
+          echo "Setting environment variables..."
+          echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}" >> $GITHUB_ENV
+          echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> $GITHUB_ENV
+          echo "AWS_REGION=${{ secrets.AWS_REGION }}" >> $GITHUB_ENV
+          echo "STACK_NAME=${{ vars.STACK_NAME }}-${{ github.event.inputs.environment }}" >> $GITHUB_ENV
+          echo "Environment variables set successfully."
+
+      - name: Validate Environment Variables
+        run: |
+          # This step validates that all required environment variables are set
+          
+          # Exit immediately if a command exits with a non-zero status
+          set -e
+          
+          echo "Validating environment variables..."
+          
+          # Define an array of required environment variables
+          required_vars=(
+            "AWS_ACCESS_KEY_ID"
+            "AWS_SECRET_ACCESS_KEY"
+            "AWS_REGION"
+            "STACK_NAME"
+          )
+          
+          # Initialize an empty string to collect missing variables
+          missing_vars=""
+          
+          # Loop through the array and check if any variable is unset or empty
+          for var in "${required_vars[@]}"; do
+            if [ -z "${!var}" ]; then
+              missing_vars+="$var "
+            fi
+          done
+          
+          # Check if there are any missing variables and print the message
+          if [ -n "$missing_vars" ]; then
+           echo "The following required environment variables are not set: $missing_vars. Please check your repository secrets, variables, environment managed secrets and environment managed variables."
+            exit 1
+          else
+            echo "All required environment variables are set successfully."
+          fi
+
+      - name: Check and Delete CloudFormation Stack
+        run: |
+          # This step checks if the CloudFormation stack exists and deletes it if it does
+          
+          # Exit immediately if a command exits with a non-zero status
+          set -e
+          
+          echo "Checking if CloudFormation stack exists for deletion..."
+
+          # Check if the stack exists
+          if aws cloudformation list-stacks --query "StackSummaries[?StackStatus=='CREATE_COMPLETE' || StackStatus=='UPDATE_COMPLETE' && starts_with(StackName, '$STACK_NAME')].StackName" --output text | grep -q "$STACK_NAME"; then
+            
+            echo "Stack $STACK_NAME exists. Proceeding to deletion."
+            
+            # Delete the stack
+            if aws cloudformation delete-stack --stack-name "$STACK_NAME"; then
+              echo "Stack $STACK_NAME is being deleted."
+              echo "Waiting for stack deletion to complete..."
+              # Check the status of the stack deletion
+              aws cloudformation wait stack-delete-complete --stack-name "$STACK_NAME"
+              echo "Stack $STACK_NAME has been successfully deleted."
+            else
+              echo "Failed to delete CloudFormation stack $STACK_NAME."
+              exit 1
+            fi
+          
+          else
+            echo "No CloudFormation stack found with the name $STACK_NAME. Skipping deletion."
+          fi
+
+      - name: End Workflow With Deployment Info
+        run: |
+          # This step is used to end the workflow and can be used for logging or final cleanup
+          echo "Deployment workflow completed for environment: ${{ github.event.inputs.environment }}"
+          echo "All resources have been successfully destroyed."

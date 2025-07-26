@@ -1,0 +1,322 @@
+name: Deploy Resources
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Select action to perform: deploy or update. Deploy will create a new stack, while update will modify an existing stack.'
+        required: true
+        type: choice
+        options:
+          - deploy
+          - update
+      environment:
+        description: 'Select environment to deploy: beta or prod.'
+        required: true
+        type: choice
+        options:
+          - beta
+          - prod
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+
+    steps:
+      - name: Start Workflow
+        run: |
+          # This step is used to start the workflow and can be used for logging or initial setup
+          echo "Starting deployment workflow for environment: ${{ github.event.inputs.environment }}"
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13.5'
+
+      - name: Set Environment Variables
+        run: |
+          # This step sets the environment variables required for the workflow
+          
+          # Exit immediately if a command exits with a non-zero status
+          set -e 
+          
+          # Define the environment variables to be set
+          echo "Setting environment variables..."
+          
+          echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}" >> $GITHUB_ENV
+          echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> $GITHUB_ENV
+          echo "AWS_REGION=${{ secrets.AWS_REGION }}" >> $GITHUB_ENV
+          echo "LAMBDA_BUCKET=${{ secrets.S3_BUCKET_LAMBDAS }}" >> $GITHUB_ENV
+          echo "AUDIO_BUCKET=${{ secrets.S3_BUCKET_AUDIO }}" >> $GITHUB_ENV
+          echo "ENVIRONMENT=${{ github.event.inputs.environment }}" >> $GITHUB_ENV
+          echo "CLOUDFORMATION_STACK_NAME=${{ vars.STACK_NAME }}-${{ github.event.inputs.environment }}" >> $GITHUB_ENV
+          echo "APP_NAME=${{ vars.APP_NAME }}" >> $GITHUB_ENV
+          echo "LAMBDA_TRIGGER=${{ vars.LAMBDA_TRIGGER }}" >> $GITHUB_ENV
+          echo "ACTION=${{ github.event.inputs.action }}" >> $GITHUB_ENV
+          
+          echo "Environment variables set successfully."
+
+      - name: Validate Environment Variables
+        run: |
+          # This step validates that all required environment variables are set
+          
+          # Exit immediately if a command exits with a non-zero status
+          set -e
+          
+          # Define an array of required environment variables
+          required_vars=(
+            "AWS_ACCESS_KEY_ID"
+            "AWS_SECRET_ACCESS_KEY"
+            "AWS_REGION"
+            "LAMBDA_BUCKET"
+            "AUDIO_BUCKET"
+            "ENVIRONMENT"
+            "APP_NAME"
+            "CLOUDFORMATION_STACK_NAME"
+            "LAMBDA_TRIGGER"
+            "ACTION"
+          )
+          
+          echo "Checking if all required environment variables are set..."
+          
+          # Initialize an empty string to collect missing variables
+          missing_vars=""
+          
+          # Loop through the array and check if any variable is unset or empty
+          for var in "${required_vars[@]}"; do
+            if [ -z "${!var}" ]; then
+              missing_vars+="$var "
+            fi
+          done
+          
+          # Check if there are any missing variables and print the message
+          if [ -n "$missing_vars" ]; then
+            echo "The following required environment variables are not set: $missing_vars. Please check your repository secrets, variables, environment managed secrets and environment managed variables."
+            exit 1
+          else
+            echo "All required environment variables are set successfully."
+          fi
+
+      - name: Check if Lambda S3 bucket exists
+        run: |
+          # This step checks if the S3 bucket for Lambda functions exists, and creates it if it does not
+          
+          # Exit immediately if a command exits with a non-zero status
+          set -e
+          
+          echo "Checking if S3 bucket $LAMBDA_BUCKET exists in region $AWS_REGION..."
+          
+          # Check if the bucket exists
+          if aws s3api list-buckets --query "Buckets[?Name=='$LAMBDA_BUCKET'].Name" --output text | grep -q "$LAMBDA_BUCKET"; then
+            echo "Bucket exists."
+          else
+            echo "Bucket does not exist. Creating bucket."
+            
+            # Create the S3 bucket for Lambda functions
+            if [ "$AWS_REGION" == "us-east-1" ]; then
+              # For us-east-1, we do not need to specify LocationConstraint
+              aws s3api create-bucket --bucket "$LAMBDA_BUCKET" --region "$AWS_REGION"
+            else
+              # For other regions, we need to specify LocationConstraint
+              aws s3api create-bucket --bucket "$LAMBDA_BUCKET" --region "$AWS_REGION" --create-bucket-configuration LocationConstraint="$AWS_REGION"
+            fi
+          
+          fi
+          
+          echo "Bucket $LAMBDA_BUCKET checked successfully."
+
+      - name: Package Lambda functions
+        run: |
+          # This step packages the Lambda functions into zip files
+          
+          # Exit immediately if a command exits with a non-zero status
+          set -e
+          
+          echo "Packaging Lambda functions..."
+          
+          # Change to the lambda directory
+          cd lambda
+          
+          # Zip each Lambda function and its dependencies
+          zip -r trigger.zip trigger.py helpers/
+          zip -r transcribe.zip transcribe.py helpers/
+          zip -r translate.zip translate.py helpers/
+          zip -r synthesize.zip synthesize.py helpers/
+          zip -r status_transcription.zip status_transcription.py helpers/
+          zip -r status_translation.zip status_translation.py helpers/
+          zip -r status_synthesis.zip status_synthesis.py helpers/
+          
+          echo "Lambda functions packaged successfully."
+
+      - name: Upload Lambda packages to S3
+        run: |
+          # This step uploads the packaged Lambda functions to the specified S3 bucket
+          
+          # Exit immediately if a command exits with a non-zero status
+          set -e
+          
+          echo "Uploading Lambda packages to S3 bucket $LAMBDA_BUCKET under $APP_NAME..."
+          
+          # Loop through each zip file in the lambda directory and upload it to S3
+          for file in lambda/*.zip; do
+            if ! aws s3 cp "$file" "s3://$LAMBDA_BUCKET/$APP_NAME/"; then
+              echo "Failed to upload $file to S3."
+              exit 1
+            fi
+          done
+          
+          echo "Uploaded all Lambda packages to s3://$LAMBDA_BUCKET/$APP_NAME/."
+
+      - name: Check if CloudFormation stack exists
+        id: check_stack_exists
+        run: |
+          # This step checks if the specified CloudFormation stack exists
+          
+          # Exit immediately if a command exits with a non-zero status
+          set -e
+          
+          echo "Checking if CloudFormation stack $CLOUDFORMATION_STACK_NAME exists..."
+          
+          # Check if the CloudFormation stack exists
+          if aws cloudformation describe-stacks --stack-name "$CLOUDFORMATION_STACK_NAME" 2>/dev/null; then
+            echo "CloudFormation stack $CLOUDFORMATION_STACK_NAME exists."
+            echo "STACK_EXISTS_FLAG=true" >> $GITHUB_ENV
+          else
+            echo "CloudFormation stack $CLOUDFORMATION_STACK_NAME does not exist."
+            echo "STACK_EXISTS_FLAG=false" >> $GITHUB_ENV
+          fi
+
+      - name: Validate CloudFormation Template
+        run: |
+          # This step validates the CloudFormation template before deployment
+          
+          # Exit immediately if a command exits with a non-zero status
+          set -e
+          
+          echo "Validating CloudFormation template..."
+          
+          # Validate the CloudFormation template
+          if ! aws cloudformation validate-template --template-body file://cloudformation/template.yaml; then
+            echo "CloudFormation template validation failed."
+            exit 1
+          else
+            echo "CloudFormation template is valid."
+          fi
+
+      - name: Deploy or Update CloudFormation Stack
+        run: |
+          # This step deploys or updates the CloudFormation stack based on the action input
+
+          # Exit immediately if a command exits with a non-zero status
+          set -e
+
+          echo "Deploying or updating CloudFormation stack $CLOUDFORMATION_STACK_NAME for environment $ENVIRONMENT..."
+
+          # Check the action input to determine whether to deploy or update the stack
+          if [ "$ACTION" == "deploy" ]; then
+          
+            echo "Creating CloudFormation stack..."
+
+            # Create the CloudFormation stack
+            if ! aws cloudformation create-stack \
+              --stack-name "$CLOUDFORMATION_STACK_NAME" \
+              --template-body file://cloudformation/template.yaml \
+              --parameters ParameterKey=Environment,ParameterValue="$ENVIRONMENT" \
+              --capabilities CAPABILITY_NAMED_IAM \
+              --tags Key=Name,Value="$CLOUDFORMATION_STACK_NAME"; then
+              echo "Failed to create CloudFormation stack."
+              exit 1
+            fi
+
+            # Wait for the CloudFormation stack creation to complete
+            aws cloudformation wait stack-create-complete --stack-name "$CLOUDFORMATION_STACK_NAME"
+          
+            echo "CloudFormation stack created successfully."
+
+          elif [ "$ACTION" == "update" ]; then
+          
+            echo "Updating CloudFormation stack..."
+
+            # Update the CloudFormation stack
+            if ! aws cloudformation update-stack \
+              --stack-name "$CLOUDFORMATION_STACK_NAME" \
+              --template-body file://cloudformation/template.yaml \
+              --parameters ParameterKey=Environment,ParameterValue="$ENVIRONMENT" \
+              --capabilities CAPABILITY_NAMED_IAM \
+              --tags Key=Name,Value="$CLOUDFORMATION_STACK_NAME"; then
+              echo "Failed to update CloudFormation stack."
+              exit 1
+            fi
+
+            # Wait for the CloudFormation stack update to complete
+            aws cloudformation wait stack-update-complete --stack-name "$CLOUDFORMATION_STACK_NAME"
+            
+            echo "CloudFormation stack updated successfully."
+
+          else
+            echo "Invalid action specified. Please choose 'deploy' or 'update'."
+            exit 1
+          fi
+
+      - name: Add S3 Event Notification
+        if: ${{ env.STACK_EXISTS_FLAG == 'false' }}
+        run: |
+          # This step sets up S3 event notifications for the Lambda function
+          
+          # Exit immediately if a command exits with a non-zero status
+          set -e
+          
+          echo "Setting up S3 event notification for Lambda function $LAMBDA_TRIGGER on bucket $AUDIO_BUCKET..."
+          
+          # Set up the event notification for the S3 bucket
+          NOTIFICATION_CONFIG=$(jq -n \
+            --arg functionArn "$(aws lambda get-function --function-name "$LAMBDA_TRIGGER" --query 'Configuration.FunctionArn' --output text)" \
+            '{
+              LambdaFunctionConfigurations: [
+                {
+                  Events: ["s3:ObjectCreated:*"],
+                  LambdaFunctionArn: $functionArn,
+                  Filter: {
+                    Key: {
+                      FilterRules: [
+                        {
+                          Name: "prefix",
+                          Value: "audio_inputs/"
+                        },
+                        {
+                          Name: "suffix",
+                          Value: ".mp3"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }')
+          
+          # Apply the notification configuration to the S3 bucket
+          if ! aws s3api put-bucket-notification-configuration --bucket "$AUDIO_BUCKET" --notification-configuration "$NOTIFICATION_CONFIG"; then
+            echo "Failed to set up S3 event notification."
+            exit 1
+          else 
+            echo "S3 event notification set up successfully."
+          fi
+
+      - name: End Workflow With Deployment Info
+        run: |
+          # This step is used to end the workflow and can be used for logging or final cleanup
+          
+          # Exit immediately if a command exits with a non-zero status
+          set -e
+          
+          echo "Deployment completed successfully."
+          echo "CloudFormation Stack Name: $CLOUDFORMATION_STACK_NAME"
+          echo "Environment: $ENVIRONMENT"
+          echo "Lambda Bucket: $LAMBDA_BUCKET"
+          echo "Audio Bucket: $AUDIO_BUCKET"
+          echo "App Name: $APP_NAME"
+          echo "Lambda Trigger: $LAMBDA_TRIGGER"

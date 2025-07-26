@@ -1,0 +1,167 @@
+name: Upload Audio
+
+on:
+  push:
+    branches:
+      - main
+      - beta
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref == 'refs/heads/beta' && 'beta' || 'prod' }}
+
+    steps:
+      - name: Start Workflow
+        run: |
+          # This step is used to start the workflow and can be used for logging or initial setup
+          echo "Starting deployment workflow for environment: ${{ github.event.inputs.environment }}" 
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set Environment Variables
+        run: |
+          # This step sets the environment variables required for the workflow
+          set -e
+          echo "Setting environment variables..."
+          echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}" >> $GITHUB_ENV
+          echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> $GITHUB_ENV
+          echo "AWS_REGION=${{ secrets.AWS_REGION }}" >> $GITHUB_ENV
+          echo "BUCKET_NAME=${{ secrets.S3_BUCKET_AUDIO }}" >> $GITHUB_ENV
+          echo "Environment variables set successfully."
+
+      - name: Validate Environment Variables
+        run: |
+          # This step validates that all required environment variables are set
+          
+          # Exit immediately if a command exits with a non-zero status
+          set -e
+          
+          echo "Validating environment variables..."
+          
+          required_vars=(
+            "AWS_ACCESS_KEY_ID"
+            "AWS_SECRET_ACCESS_KEY"
+            "AWS_REGION"
+            "BUCKET_NAME"
+          )
+          
+          echo "Checking if all required environment variables are set..."
+          
+          # Initialize an empty string to collect missing variables
+          missing_vars=""
+          
+          # Loop through the array and check if any variable is unset or empty
+          for var in "${required_vars[@]}"; do
+            if [ -z "${!var}" ]; then
+              missing_vars+="$var "
+            fi
+          done
+          
+          # Check if there are any missing variables and print the message
+          if [ -n "$missing_vars" ]; then
+            echo "The following required environment variables are not set: $missing_vars. Please check your repository secrets, variables, environment managed secrets and environment managed variables."
+            exit 1
+          else
+            echo "All required environment variables are set successfully."
+          fi
+
+      - name: Check for audio files
+        id: check_audio_files
+        run: |
+          # This step checks if there are any audio files in the audio_inputs/ directory
+          
+          # Exit immediately if a command exits with a non-zero status
+          set -e
+          
+          echo "Checking for audio files in audio_inputs/ directory..."
+          
+          # Check if the audio_inputs directory exists
+          if [ -z "$(ls -A audio_inputs/*.mp3 2>/dev/null)" ]; then
+            echo "No audio files found in audio_inputs/ directory."
+            echo "Setting flag to skip upload..."
+            # Set the flag to skip upload
+            echo "SKIP_UPLOAD=true" >> $GITHUB_ENV
+            echo "Flag set to skip upload."
+          else
+            echo "Audio files found. Proceeding with upload."
+            # Set the flag to proceed with upload
+            echo "SKIP_UPLOAD=false" >> $GITHUB_ENV
+            echo "Flag set to proceed with upload."
+          fi
+          
+          echo "Audio file check completed."
+
+      - name: Set Bucket Name
+        run: |
+          # This step sets the bucket name based on the branch
+          
+          # Exit immediately if a command exits with a non-zero status
+          set -e
+          
+          echo "Setting bucket name based on branch..."
+          
+          # Set the bucket name based on the branch
+          if [ "${{ github.ref }}" == "refs/heads/beta" ]; then
+            echo "Setting bucket to beta environment."
+          elif [ "${{ github.ref }}" == "refs/heads/main" ]; then
+            echo "Setting bucket to production environment."
+          else
+            # If the branch is neither beta nor main, exit with an error
+            echo "Error: This workflow only supports deployments to beta or main branches."
+            exit 1
+          fi
+          
+          echo "Bucket name set to: $BUCKET_NAME"
+
+      - name: Check if S3 bucket exists
+        if: env.SKIP_UPLOAD != 'true'
+        run: |
+          # This step checks if the specified S3 bucket exists before uploading files
+          
+          # Exit immediately if a command exits with a non-zero status
+          set -e
+          
+          echo "Bucket Name: $BUCKET_NAME"
+          echo "Checking if bucket $BUCKET_NAME exists..."
+          
+          # Check if the bucket exists using AWS CLI
+          if aws s3api list-buckets --query "Buckets[?Name=='$BUCKET_NAME'].Name" --output text | grep -q "$BUCKET_NAME"; then
+            echo "Bucket exists. Proceeding to upload."
+          else
+            # If the bucket does not exist or access is denied, exit with an error
+            echo "Error: Bucket does not exist or access is denied."
+            exit 1
+          fi
+          
+          echo "Bucket $BUCKET_NAME exists."
+
+      - name: Upload audio files to S3
+        if: env.SKIP_UPLOAD != 'true'
+        run: |
+          # This step uploads audio files to the specified S3 bucket
+          
+          # Exit immediately if a command exits with a non-zero status
+          set -e
+          
+          echo "Uploading audio files to S3..."
+          
+          aws s3 sync audio_inputs/ "s3://$BUCKET_NAME/audio_inputs/" --exclude "*" --include "*.mp3"
+          
+          echo "Uploaded all .mp3 audio packages to s3://$BUCKET_NAME/audio_inputs/."
+
+      - name: End Workflow With Upload Info
+        run: |
+          # This step is used to end the workflow and can be used for logging or final setup
+          
+          # Exit immediately if a command exits with a non-zero status
+          set -e
+          
+          echo "Deployment workflow completed for environment: ${{ github.event.inputs.environment }}"
+                    
+          if [ "${{ env.SKIP_UPLOAD }}" == "true" ]; then
+            echo "No audio files found. Skipping upload."
+          else
+            echo "All audio files have been uploaded to S3 bucket: $BUCKET_NAME/audio_inputs/."
+          fi
